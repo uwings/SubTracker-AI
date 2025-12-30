@@ -24,6 +24,7 @@ const CycleBadge: React.FC<{ cycle: BillingCycle }> = ({ cycle }) => {
 };
 
 export const TimelineView: React.FC<TimelineViewProps> = ({ subscriptions }) => {
+  // 默认显示过去 3 个月
   const [monthsCount, setMonthsCount] = useState(3);
   const timelineData = useMemo(() => getTimelineData(subscriptions, monthsCount), [subscriptions, monthsCount]);
 
@@ -32,19 +33,23 @@ export const TimelineView: React.FC<TimelineViewProps> = ({ subscriptions }) => 
       <div className="flex items-center justify-between px-2">
         <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
           <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-          扣费时间轴预测
+          订阅支出历史回顾
         </h2>
+        <div className="text-[10px] text-slate-400 font-black uppercase tracking-widest">
+          Spending History
+        </div>
       </div>
 
       <div className="relative border-l-2 border-slate-200 ml-4 pl-8 space-y-12 pb-8">
         {timelineData.map((month, mIdx) => (
           <div key={month.label} className="relative">
             {/* 月份节点 */}
-            <div className="absolute -left-[41px] top-0 w-4 h-4 rounded-full bg-white border-4 border-indigo-500 shadow-sm z-10"></div>
+            <div className={`absolute -left-[41px] top-0 w-4 h-4 rounded-full bg-white border-4 shadow-sm z-10 ${mIdx === 0 ? 'border-indigo-500 scale-125' : 'border-slate-300'}`}></div>
             
             <div className="mb-4">
               <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest flex items-center gap-4">
                 {month.label}
+                {mIdx === 0 && <span className="text-[8px] bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded font-black tracking-widest">本月</span>}
                 <span className="h-[1px] flex-1 bg-slate-100"></span>
                 <span className="text-slate-900 font-black">{formatCurrency(month.total, BASE_CURRENCY)}</span>
               </h3>
@@ -79,7 +84,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({ subscriptions }) => 
                 ))
               ) : (
                 <div className="col-span-full py-6 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200 text-center text-xs text-slate-400 italic">
-                  该月无预计扣费
+                  该月无支出记录
                 </div>
               )}
             </div>
@@ -92,7 +97,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({ subscriptions }) => 
           onClick={() => setMonthsCount(prev => prev + 6)}
           className="group flex items-center gap-2 px-8 py-3 bg-white border border-slate-200 rounded-2xl text-xs font-black uppercase tracking-widest text-slate-500 hover:text-indigo-600 hover:border-indigo-200 hover:shadow-xl hover:shadow-indigo-50 transition-all active:scale-95"
         >
-          加载更多预测 (6个月)
+          查看更早的支出 (增加 6 个月)
           <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 transition-transform group-hover:translate-y-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" /></svg>
         </button>
       </div>

@@ -1,13 +1,12 @@
 
-import { Subscription } from './types';
+import { Subscription, BillingCycle, PaymentPlatform } from './types';
 
 const DB_NAME = 'SubTrackerDB';
 const STORE_NAME = 'subscriptions';
-const VERSION = 3;
+const VERSION = 6; // 升级版本以确保索引最新
 
 /**
- * Initializes the IndexedDB database.
- * Version 3 ensures 'uid' index exists for reliable data synchronization.
+ * 初始化数据库
  */
 export const initDB = (): Promise<IDBDatabase> => {
   return new Promise((resolve, reject) => {
@@ -19,12 +18,9 @@ export const initDB = (): Promise<IDBDatabase> => {
         const store = db.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true });
         store.createIndex('uid', 'uid', { unique: true });
       } else {
-        const transaction = (event.target as IDBOpenDBRequest).transaction;
-        if (transaction) {
-          const store = transaction.objectStore(STORE_NAME);
-          if (!store.indexNames.contains('uid')) {
-            store.createIndex('uid', 'uid', { unique: true });
-          }
+        const store = (event.target as IDBOpenDBRequest).transaction!.objectStore(STORE_NAME);
+        if (!store.indexNames.contains('uid')) {
+          store.createIndex('uid', 'uid', { unique: true });
         }
       }
     };
@@ -35,8 +31,74 @@ export const initDB = (): Promise<IDBDatabase> => {
 };
 
 /**
- * Fetches all subscription records.
+ * 验证并清洗数据，确保所有字段符合 Subscription 接口
  */
+const validateAndClean = (item: any): Subscription | null => {
+  if (!item || typeof item !== 'object') return null;
+  
+  // 必须具备的核心字段或默认值
+  const name = String(item.name || '未命名服务');
+  const cost = parseFloat(item.cost) || 0;
+  const uid = item.uid || crypto.randomUUID();
+  
+  return {
+    uid,
+    name,
+    cost,
+    currency: item.currency || 'CNY',
+    billingCycle: (Object.values(BillingCycle).includes(item.billingCycle) ? item.billingCycle : BillingCycle.MONTHLY),
+    startDate: item.startDate || new Date().toISOString(),
+    endDate: item.endDate || undefined,
+    durationMonths: item.durationMonths ? parseInt(item.durationMonths) : undefined,
+    autoRenew: item.autoRenew !== undefined ? !!item.autoRenew : true,
+    category: item.category || '生活',
+    platform: (Object.values(PaymentPlatform).includes(item.platform) ? item.platform : PaymentPlatform.OTHER),
+    status: item.status === 'canceled' ? 'canceled' : 'active',
+    notes: item.notes || '',
+    updatedAt: Number(item.updatedAt) || Date.now(),
+    logoUrl: item.logoUrl || '',
+    websiteUrl: item.websiteUrl || '',
+    billingUrl: item.billingUrl || ''
+  };
+};
+
+/**
+ * 导入订阅列表：使用 Promise.all 保证所有操作在同一个事务完成前被提交
+ */
+export const importSubscriptions = async (subs: any[]): Promise<void> => {
+  const db = await initDB();
+  
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(STORE_NAME, 'readwrite');
+    const store = transaction.objectStore(STORE_NAME);
+    const uidIndex = store.index('uid');
+
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+
+    subs.forEach((rawItem) => {
+      const cleanedItem = validateAndClean(rawItem);
+      if (!cleanedItem) return;
+
+      const getReq = uidIndex.get(cleanedItem.uid);
+      getReq.onsuccess = () => {
+        const existing = getReq.result;
+        const itemToSave = { ...cleanedItem };
+        
+        // 如果本地已存在该 UID 的记录，保留本地 ID 进行覆盖更新
+        if (existing) {
+          itemToSave.id = existing.id;
+        } else {
+          // 如果是新记录，确保没有旧 ID 干扰自增
+          delete (itemToSave as any).id;
+        }
+        
+        store.put(itemToSave);
+      };
+    });
+  });
+};
+
 export const getAllSubscriptions = async (): Promise<Subscription[]> => {
   const db = await initDB();
   return new Promise((resolve, reject) => {
@@ -48,104 +110,27 @@ export const getAllSubscriptions = async (): Promise<Subscription[]> => {
   });
 };
 
-/**
- * Saves or updates a single subscription.
- * Uses UID to find existing records to maintain ID consistency.
- */
 export const saveSubscription = async (sub: Subscription): Promise<number> => {
   const db = await initDB();
   return new Promise((resolve, reject) => {
     const transaction = db.transaction(STORE_NAME, 'readwrite');
     const store = transaction.objectStore(STORE_NAME);
-    const index = store.index('uid');
-    
-    const getRequest = index.get(sub.uid);
-    
-    getRequest.onsuccess = () => {
-      const existing = getRequest.result;
-      const subToSave = { ...sub };
-      if (existing) {
-        subToSave.id = existing.id;
-      } else {
-        // If it's a new UID, let the DB generate the ID
-        delete (subToSave as any).id;
-      }
-      const putRequest = store.put(subToSave);
-      putRequest.onsuccess = () => resolve(putRequest.result as number);
-      putRequest.onerror = () => reject(putRequest.error);
-    };
-    
-    getRequest.onerror = () => reject(getRequest.error);
-  });
-};
-
-/**
- * Sequential import logic for better stability.
- * Processes items one by one within a single transaction.
- */
-export const importSubscriptions = async (subs: Subscription[]): Promise<void> => {
-  const db = await initDB();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_NAME, 'readwrite');
-    const store = transaction.objectStore(STORE_NAME);
     const uidIndex = store.index('uid');
-
-    transaction.oncomplete = () => resolve();
-    transaction.onerror = () => reject(transaction.error);
-    transaction.onabort = () => reject(new Error('Transaction aborted'));
-
-    let currentIndex = 0;
-
-    const processNext = () => {
-      if (currentIndex >= subs.length) {
-        return;
-      }
-
-      const sub = subs[currentIndex];
-      if (!sub || !sub.uid) {
-        currentIndex++;
-        processNext();
-        return;
-      }
-
-      // 1. Look up existing record by UID
-      const getReq = uidIndex.get(sub.uid);
+    
+    const getReq = uidIndex.get(sub.uid);
+    getReq.onsuccess = () => {
+      const existing = getReq.result;
+      const subToSave = { ...sub };
+      if (existing) subToSave.id = existing.id;
+      // 不要删除 sub.id 如果它已经存在（手动编辑场景）
       
-      getReq.onsuccess = () => {
-        const existing = getReq.result;
-        // 2. Prepare data by stripping imported ID and applying local ID if found
-        const subToSave = { ...sub };
-        delete (subToSave as any).id; 
-        
-        if (existing) {
-          subToSave.id = existing.id;
-        }
-
-        // 3. Write record
-        const putReq = store.put(subToSave);
-        putReq.onsuccess = () => {
-          currentIndex++;
-          processNext();
-        };
-        putReq.onerror = () => {
-          transaction.abort();
-          reject(new Error(`Failed to store item at index ${currentIndex}`));
-        };
-      };
-
-      getReq.onerror = () => {
-        transaction.abort();
-        reject(new Error(`Failed to query item at index ${currentIndex}`));
-      };
+      const putReq = store.put(subToSave);
+      putReq.onsuccess = () => resolve(putReq.result as number);
+      putReq.onerror = () => reject(putReq.error);
     };
-
-    processNext();
   });
 };
 
-/**
- * Deletes a subscription record by internal ID.
- */
 export const deleteSubscription = async (id: number): Promise<void> => {
   const db = await initDB();
   return new Promise((resolve, reject) => {
@@ -157,9 +142,6 @@ export const deleteSubscription = async (id: number): Promise<void> => {
   });
 };
 
-/**
- * Clears all subscription records.
- */
 export const clearAllSubscriptions = async (): Promise<void> => {
   const db = await initDB();
   return new Promise((resolve, reject) => {

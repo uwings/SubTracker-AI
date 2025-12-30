@@ -73,12 +73,17 @@ export const calculateNextMonthCost = (subscriptions: Subscription[]): number =>
   return calculateMonthlyCost(subscriptions, d.getFullYear(), d.getMonth());
 };
 
+/**
+ * 核心修改：改为获取历史时间轴数据。
+ * 从当前月向过去回溯指定的月数。
+ */
 export const getTimelineData = (subscriptions: Subscription[], monthsCount: number): TimelineMonth[] => {
   const now = getCurrentDate();
   const timeline: TimelineMonth[] = [];
 
   for (let i = 0; i < monthsCount; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+    // 使用 - i 向历史回溯
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
     const year = d.getFullYear();
     const month = d.getMonth();
     const items = getMonthlyBreakdown(subscriptions, year, month);

@@ -42,7 +42,7 @@ export interface Subscription {
 
 export interface DashboardBlock {
   id: string;
-  type: 'SUMMARY' | 'MONTH_CHART' | 'UPCOMING' | 'CATEGORY_PIE' | 'MONTH_BREAKDOWN' | 'NEXT_MONTH_PROJECTION';
+  type: 'SUMMARY' | 'MONTH_CHART' | 'UPCOMING' | 'CATEGORY_PIE' | 'MONTH_BREAKDOWN' | 'NEXT_MONTH_PROJECTION' | 'PRODUCT_BAR';
   title: string;
   size: 'small' | 'medium' | 'large';
 }

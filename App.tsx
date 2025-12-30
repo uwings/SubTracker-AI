@@ -19,11 +19,12 @@ const App: React.FC = () => {
 
   const [blocks] = useState<DashboardBlock[]>([
     { id: '1', type: 'SUMMARY', title: '概览', size: 'small' },
-    { id: '2', type: 'MONTH_BREAKDOWN', title: '本月支出详情', size: 'medium' },
-    { id: '6', type: 'NEXT_MONTH_PROJECTION', title: '下月预计支出', size: 'medium' },
-    { id: '3', type: 'UPCOMING', title: '待支付账单', size: 'small' },
+    { id: '2', type: 'MONTH_BREAKDOWN', title: '扣费明细', size: 'medium' },
+    { id: '6', type: 'NEXT_MONTH_PROJECTION', title: '下月预计', size: 'medium' },
     { id: '4', type: 'MONTH_CHART', title: '消费趋势', size: 'large' },
-    { id: '5', type: 'CATEGORY_PIE', title: '分类占比', size: 'small' },
+    { id: '7', type: 'PRODUCT_BAR', title: '产品消费比对', size: 'medium' },
+    { id: '5', type: 'CATEGORY_PIE', title: '分类占比', size: 'medium' },
+    { id: '3', type: 'UPCOMING', title: '待支付账单', size: 'small' },
   ]);
 
   const loadData = useCallback(async () => {
@@ -41,7 +42,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (notification) {
-      const timer = setTimeout(() => setNotification(null), 5000);
+      const timer = setTimeout(() => setNotification(null), notification.type === 'error' ? 8000 : 4000);
       return () => clearTimeout(timer);
     }
   }, [notification]);
@@ -83,7 +84,7 @@ const App: React.FC = () => {
       if (existingMatches.length > 0) {
         for (const match of existingMatches) {
           const updated = { ...match, status: 'canceled' as const, endDate: new Date().toISOString(), updatedAt: Date.now() };
-          await saveSubscription(updated);
+          await saveSubscription(updated as Subscription);
         }
         setNotification({ message: `已取消 "${parsed.name}" 的续费`, type: 'info' });
       } else {
@@ -142,10 +143,11 @@ const App: React.FC = () => {
       setNotification({ message: "没有可导出的数据", type: 'info' });
       return;
     }
+    // 导出纯净 JSON，并显式指定编码
     const dataStr = JSON.stringify(subscriptions, null, 2);
-    const blob = new Blob([dataStr], { type: 'application/json' });
+    const blob = new Blob([dataStr], { type: 'application/json;charset=utf-8' });
     const url = URL.createObjectURL(blob);
-    const exportFileDefaultName = `subtracker-export-${new Date().toISOString().split('T')[0]}.json`;
+    const exportFileDefaultName = `subtracker-backup-${new Date().toISOString().split('T')[0]}.json`;
 
     const linkElement = document.createElement('a');
     linkElement.setAttribute('href', url);
@@ -153,16 +155,17 @@ const App: React.FC = () => {
     linkElement.click();
     
     setTimeout(() => URL.revokeObjectURL(url), 100);
-    setNotification({ message: "导出成功", type: 'success' });
+    setNotification({ message: "备份导出成功", type: 'success' });
   };
 
   const handleImportClick = () => {
     if (fileInputRef.current) {
+      fileInputRef.current.value = ''; // 重置以触发 onChange
       fileInputRef.current.click();
     }
   };
 
-  const handleFileImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -172,29 +175,33 @@ const App: React.FC = () => {
         const content = event.target?.result;
         if (typeof content !== 'string') return;
         
-        const importedData = JSON.parse(content);
+        let importedData: any;
+        try {
+          importedData = JSON.parse(content);
+        } catch (e) {
+          throw new Error("文件内容格式错误，请确保是标准的 JSON 文件。");
+        }
         
         if (!Array.isArray(importedData)) {
-          throw new Error("Invalid file format: Expected a JSON array.");
+          throw new Error("导入的数据格式不匹配（应为列表）。");
         }
 
-        if (confirm(`准备导入 ${importedData.length} 条记录。系统将根据唯一标识 (UID) 自动合并数据。是否继续？`)) {
+        if (confirm(`准备同步 ${importedData.length} 条记录。系统将自动按 UID 进行覆盖或新增，是否继续？`)) {
           setNotification({ message: "正在同步数据...", type: 'info' });
-          await importSubscriptions(importedData as Subscription[]);
-          setNotification({ message: `导入成功：已同步 ${importedData.length} 条订阅记录`, type: 'success' });
+          await importSubscriptions(importedData);
+          setNotification({ message: `导入完成：已同步 ${importedData.length} 条数据`, type: 'success' });
           await loadData();
         }
       } catch (err: any) {
-        console.error("Import Error:", err);
+        console.error("Import error:", err);
         setNotification({ 
-          message: `导入失败: ${err.message || '请检查 JSON 文件格式'}`, 
+          message: `导入失败: ${err.message}`, 
           type: 'error' 
         });
       }
     };
-    reader.onerror = () => setNotification({ message: "读取文件失败", type: 'error' });
+    reader.onerror = () => setNotification({ message: "文件读取失败", type: 'error' });
     reader.readAsText(file);
-    e.target.value = ''; 
   };
 
   return (
@@ -202,7 +209,7 @@ const App: React.FC = () => {
       {notification && (
         <div className="fixed top-24 right-8 z-50 px-6 py-3 rounded-2xl shadow-2xl border border-slate-100 text-sm font-black bg-white/90 backdrop-blur-md animate-in slide-in-from-right-8 fade-in duration-300">
           <div className="flex items-center gap-2">
-            <span className={`w-2 h-2 rounded-full ${notification.type === 'error' ? 'bg-red-500' : notification.type === 'info' ? 'bg-indigo-400 animate-spin' : 'bg-emerald-500'}`}></span>
+            <span className={`w-2 h-2 rounded-full ${notification.type === 'error' ? 'bg-red-500' : notification.type === 'info' ? 'bg-indigo-400 animate-pulse' : 'bg-emerald-500'}`}></span>
             {notification.message}
           </div>
         </div>
@@ -297,7 +304,7 @@ const App: React.FC = () => {
 
         {view === 'dashboard' ? (
           <div className="space-y-12">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 items-stretch">
               {blocks.map((block) => (
                 <div key={block.id} className={`${block.size === 'large' ? 'lg:col-span-2' : block.size === 'medium' ? 'md:col-span-2 lg:col-span-1' : ''}`}>
                   <BlockContainer block={block} subscriptions={subscriptions} />
