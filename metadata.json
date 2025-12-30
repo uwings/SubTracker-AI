@@ -1,0 +1,5 @@
+{
+  "name": "SubTracker AI",
+  "description": "An intelligent personal subscription manager that uses natural language processing to track monthly, yearly, and phased subscription costs with a flexible dashboard system.",
+  "requestFramePermissions": []
+}
