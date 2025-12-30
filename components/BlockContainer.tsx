@@ -9,6 +9,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 interface BlockProps {
   block: DashboardBlock;
   subscriptions: Subscription[];
+  onAction?: (type: string, payload?: any) => void;
 }
 
 const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f43f5e'];
@@ -63,6 +64,43 @@ export const SummaryBlock: React.FC<BlockProps> = ({ subscriptions }) => {
           </p>
           <p className="text-[8px] text-indigo-400 font-medium">{year}年 预测</p>
         </div>
+      </div>
+    </div>
+  );
+};
+
+export const QuickEntryBlock: React.FC<BlockProps> = ({ onAction }) => {
+  const presets = [
+    { name: 'Netflix', prompt: 'Netflix 每月 $15', color: 'bg-red-50 text-red-600' },
+    { name: 'Spotify', prompt: 'Spotify 每月 15元', color: 'bg-emerald-50 text-emerald-600' },
+    { name: 'ChatGPT', prompt: 'ChatGPT Plus 每月 $20', color: 'bg-slate-900 text-white' },
+    { name: 'iCloud', prompt: 'iCloud 2TB 每月 68元', color: 'bg-blue-50 text-blue-600' },
+  ];
+
+  return (
+    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 h-full flex flex-col">
+      <h3 className="text-slate-900 font-bold mb-4 flex justify-between items-center">
+        <span>快捷入口</span>
+        <span className="text-[10px] text-slate-400 font-black uppercase tracking-widest">Quick Actions</span>
+      </h3>
+      <div className="grid grid-cols-2 gap-3 flex-1">
+        {presets.map(p => (
+          <button 
+            key={p.name}
+            onClick={() => onAction?.('fill', p.prompt)}
+            className={`flex flex-col items-center justify-center p-3 rounded-xl border border-transparent hover:border-slate-100 transition-all active:scale-95 ${p.color}`}
+          >
+            <span className="text-xs font-black uppercase tracking-tight">{p.name}</span>
+            <span className="text-[8px] opacity-60 mt-1 font-bold">一键添加</span>
+          </button>
+        ))}
+        <button 
+          onClick={() => onAction?.('focus')}
+          className="col-span-2 flex items-center justify-center gap-2 p-3 bg-indigo-600 text-white rounded-xl font-black text-xs uppercase tracking-widest shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all active:scale-95 mt-2"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 4v16m8-8H4" /></svg>
+          手动新增订阅
+        </button>
       </div>
     </div>
   );
@@ -136,7 +174,7 @@ export const ProductBarBlock: React.FC<BlockProps> = ({ subscriptions }) => {
   const items = getMonthlyBreakdown(subscriptions, now.getFullYear(), now.getMonth());
   const data = items
     .sort((a, b) => b.costInBase - a.costInBase)
-    .slice(0, 10) // 仅显示前 10
+    .slice(0, 10) 
     .map(item => ({
       name: item.sub.name,
       amount: item.costInBase,
@@ -352,12 +390,13 @@ export const UpcomingBlock: React.FC<BlockProps> = ({ subscriptions }) => {
   );
 };
 
-export const BlockContainer: React.FC<BlockProps> = ({ block, subscriptions }) => {
+export const BlockContainer: React.FC<BlockProps> = ({ block, subscriptions, onAction }) => {
   return (
     <div className="h-full relative overflow-hidden">
       {(() => {
         switch (block.type) {
           case 'SUMMARY': return <SummaryBlock block={block} subscriptions={subscriptions} />;
+          case 'QUICK_ENTRY': return <QuickEntryBlock block={block} subscriptions={subscriptions} onAction={onAction} />;
           case 'MONTH_BREAKDOWN': return <MonthBreakdownBlock block={block} subscriptions={subscriptions} />;
           case 'NEXT_MONTH_PROJECTION': return <NextMonthProjectionBlock block={block} subscriptions={subscriptions} />;
           case 'MONTH_CHART': return <ChartBlock block={block} subscriptions={subscriptions} />;

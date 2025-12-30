@@ -10,7 +10,26 @@ interface DraftPreviewProps {
   onCancel: () => void;
 }
 
+const CYCLE_OPTIONS = [
+  { value: BillingCycle.MONTHLY, label: '按月订阅' },
+  { value: BillingCycle.YEARLY, label: '按年订阅' },
+  { value: BillingCycle.ONE_TIME, label: '单次付费' },
+  { value: BillingCycle.LIFETIME, label: '终身买断' },
+  { value: BillingCycle.PHASED, label: '阶段性订阅' },
+];
+
 export const DraftPreview: React.FC<DraftPreviewProps> = ({ draft, onUpdate, onConfirm, onCancel }) => {
+  const isRecurring = draft.billingCycle === BillingCycle.MONTHLY || draft.billingCycle === BillingCycle.YEARLY || draft.billingCycle === BillingCycle.PHASED;
+
+  const handleCycleChange = (cycle: BillingCycle) => {
+    const isNowRecurring = cycle === BillingCycle.MONTHLY || cycle === BillingCycle.YEARLY || cycle === BillingCycle.PHASED;
+    onUpdate({ 
+      billingCycle: cycle,
+      // 核心联动：如果是买断或单次，自动取消续费标识
+      autoRenew: isNowRecurring ? (draft.autoRenew ?? true) : false
+    });
+  };
+
   return (
     <div className="mt-4 p-6 bg-indigo-50 border border-indigo-100 rounded-2xl animate-in fade-in slide-in-from-top-4 duration-300">
       <div className="flex justify-between items-center mb-4">
@@ -50,10 +69,10 @@ export const DraftPreview: React.FC<DraftPreviewProps> = ({ draft, onUpdate, onC
           <label className="text-[10px] font-black text-indigo-300 uppercase">订阅周期</label>
           <select 
             value={draft.billingCycle || BillingCycle.MONTHLY} 
-            onChange={e => onUpdate({ billingCycle: e.target.value as BillingCycle })} 
+            onChange={e => handleCycleChange(e.target.value as BillingCycle)} 
             className="w-full px-3 py-2 bg-white rounded-lg text-sm border-none shadow-sm outline-none"
           >
-            {Object.values(BillingCycle).map(c => <option key={c} value={c}>{c}</option>)}
+            {CYCLE_OPTIONS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
           </select>
         </div>
         <div className="space-y-1">
@@ -70,15 +89,17 @@ export const DraftPreview: React.FC<DraftPreviewProps> = ({ draft, onUpdate, onC
 
       <div className="mt-4 pt-4 border-t border-indigo-100 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div className="flex flex-wrap gap-4">
-           <label className="flex items-center gap-2 cursor-pointer group">
-            <input 
-              type="checkbox" 
-              checked={!!draft.autoRenew} 
-              onChange={e => onUpdate({ autoRenew: e.target.checked })} 
-              className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-none shadow-inner" 
-            />
-            <span className="text-xs font-bold text-indigo-700 group-hover:text-indigo-900 transition-colors">自动续费</span>
-          </label>
+           {isRecurring && (
+             <label className="flex items-center gap-2 cursor-pointer group">
+              <input 
+                type="checkbox" 
+                checked={!!draft.autoRenew} 
+                onChange={e => onUpdate({ autoRenew: e.target.checked })} 
+                className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-none shadow-inner" 
+              />
+              <span className="text-xs font-bold text-indigo-700 group-hover:text-indigo-900 transition-colors">开启自动续费</span>
+            </label>
+           )}
           <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg shadow-sm">
             <label className="text-[10px] font-black text-indigo-300 uppercase">分类</label>
             <input 

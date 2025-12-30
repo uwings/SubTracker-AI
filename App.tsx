@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Subscription, DashboardBlock, BillingCycle, BASE_CURRENCY, PaymentPlatform } from './types';
 import { getAllSubscriptions, saveSubscription, deleteSubscription, clearAllSubscriptions, importSubscriptions } from './db';
 import { parseSubscriptionText, ParsedResponse } from './services/geminiService';
@@ -16,9 +16,17 @@ const App: React.FC = () => {
   const [view, setView] = useState<'dashboard' | 'list'>('dashboard');
   const [notification, setNotification] = useState<{message: string, type: 'success' | 'info' | 'error'} | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const aiInputRef = useRef<HTMLInputElement>(null);
+
+  // 动态提取现有分类
+  const existingCategories = useMemo(() => {
+    const cats = subscriptions.map(s => s.category);
+    return Array.from(new Set(cats)).filter(Boolean);
+  }, [subscriptions]);
 
   const [blocks] = useState<DashboardBlock[]>([
     { id: '1', type: 'SUMMARY', title: '概览', size: 'small' },
+    { id: '8', type: 'QUICK_ENTRY', title: '快捷入口', size: 'small' },
     { id: '2', type: 'MONTH_BREAKDOWN', title: '扣费明细', size: 'medium' },
     { id: '6', type: 'NEXT_MONTH_PROJECTION', title: '下月预计', size: 'medium' },
     { id: '4', type: 'MONTH_CHART', title: '消费趋势', size: 'large' },
@@ -47,12 +55,13 @@ const App: React.FC = () => {
     }
   }, [notification]);
 
-  const handleAISubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleAISubmit = async (e?: React.FormEvent) => {
+    e?.preventDefault();
     if (!input.trim() || isParsing) return;
 
     setIsParsing(true);
-    const parsed = await parseSubscriptionText(input);
+    // 传入现有分类列表给 AI
+    const parsed = await parseSubscriptionText(input, existingCategories);
     setIsParsing(false);
 
     if (parsed && parsed.name) {
@@ -138,12 +147,17 @@ const App: React.FC = () => {
     loadData();
   };
 
+  const handleUpdateSub = async (updatedSub: Subscription) => {
+    await saveSubscription(updatedSub);
+    setNotification({ message: `已保存 "${updatedSub.name}" 的更改`, type: 'success' });
+    loadData();
+  };
+
   const handleExportData = () => {
     if (subscriptions.length === 0) {
       setNotification({ message: "没有可导出的数据", type: 'info' });
       return;
     }
-    // 导出纯净 JSON，并显式指定编码
     const dataStr = JSON.stringify(subscriptions, null, 2);
     const blob = new Blob([dataStr], { type: 'application/json;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -160,7 +174,7 @@ const App: React.FC = () => {
 
   const handleImportClick = () => {
     if (fileInputRef.current) {
-      fileInputRef.current.value = ''; // 重置以触发 onChange
+      fileInputRef.current.value = ''; 
       fileInputRef.current.click();
     }
   };
@@ -175,33 +189,34 @@ const App: React.FC = () => {
         const content = event.target?.result;
         if (typeof content !== 'string') return;
         
-        let importedData: any;
-        try {
-          importedData = JSON.parse(content);
-        } catch (e) {
-          throw new Error("文件内容格式错误，请确保是标准的 JSON 文件。");
-        }
-        
+        const importedData = JSON.parse(content);
         if (!Array.isArray(importedData)) {
-          throw new Error("导入的数据格式不匹配（应为列表）。");
+          throw new Error("格式错误：导入的数据应为数组。");
         }
 
-        if (confirm(`准备同步 ${importedData.length} 条记录。系统将自动按 UID 进行覆盖或新增，是否继续？`)) {
-          setNotification({ message: "正在同步数据...", type: 'info' });
+        if (confirm(`准备同步 ${importedData.length} 条记录。系统将按 UID 自动更新或新增，是否继续？`)) {
+          setNotification({ message: "正在导入...", type: 'info' });
           await importSubscriptions(importedData);
-          setNotification({ message: `导入完成：已同步 ${importedData.length} 条数据`, type: 'success' });
-          await loadData();
+          setNotification({ message: `导入完成，已同步 ${importedData.length} 条数据`, type: 'success' });
+          loadData();
         }
       } catch (err: any) {
         console.error("Import error:", err);
-        setNotification({ 
-          message: `导入失败: ${err.message}`, 
-          type: 'error' 
-        });
+        setNotification({ message: `导入失败: ${err.message}`, type: 'error' });
       }
     };
-    reader.onerror = () => setNotification({ message: "文件读取失败", type: 'error' });
     reader.readAsText(file);
+  };
+
+  const handleBlockAction = (type: string, payload?: any) => {
+    if (type === 'focus') {
+      aiInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      aiInputRef.current?.focus();
+    } else if (type === 'fill') {
+      setInput(payload);
+      aiInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      aiInputRef.current?.focus();
+    }
   };
 
   return (
@@ -214,6 +229,14 @@ const App: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* 悬浮快捷入口 (仅移动端可见) */}
+      <button 
+        onClick={() => handleBlockAction('focus')}
+        className="fixed bottom-8 right-8 z-40 w-14 h-14 bg-indigo-600 text-white rounded-full shadow-2xl shadow-indigo-200 flex items-center justify-center hover:bg-indigo-700 hover:scale-110 active:scale-95 transition-all group md:hidden"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 4v16m8-8H4" /></svg>
+      </button>
 
       <header className="bg-white/80 backdrop-blur-md border-b border-slate-200 sticky top-0 z-30 px-4 md:px-8 py-4">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -270,6 +293,7 @@ const App: React.FC = () => {
         <div className="mb-10">
           <form onSubmit={handleAISubmit} className="relative group">
             <input 
+              ref={aiInputRef}
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -307,7 +331,11 @@ const App: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 items-stretch">
               {blocks.map((block) => (
                 <div key={block.id} className={`${block.size === 'large' ? 'lg:col-span-2' : block.size === 'medium' ? 'md:col-span-2 lg:col-span-1' : ''}`}>
-                  <BlockContainer block={block} subscriptions={subscriptions} />
+                  <BlockContainer 
+                    block={block} 
+                    subscriptions={subscriptions} 
+                    onAction={handleBlockAction} 
+                  />
                 </div>
               ))}
             </div>
@@ -324,16 +352,7 @@ const App: React.FC = () => {
                 deleteSubscription(id).then(loadData);
               }
             }} 
-            onToggleStatus={async (sub) => {
-              const updated = { 
-                ...sub, 
-                status: sub.status === 'active' ? 'canceled' : 'active', 
-                endDate: sub.status === 'active' ? new Date().toISOString() : undefined,
-                updatedAt: Date.now() 
-              } as Subscription;
-              await saveSubscription(updated);
-              loadData();
-            }} 
+            onUpdateSub={handleUpdateSub}
           />
         )}
       </main>
