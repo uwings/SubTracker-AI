@@ -15,7 +15,7 @@ const App: React.FC = () => {
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [input, setInput] = useState('');
   const [isParsing, setIsParsing] = useState(false);
-  const [draftSub, setDraftSub] = useState<ParsedResponse | null>(null);
+  const [draftSubs, setDraftSubs] = useState<ParsedResponse[]>([]);
   const [view, setView] = useState<'dashboard' | 'list' | 'share'>('dashboard');
   const [notification, setNotification] = useState<{message: string, type: 'success' | 'error'} | null>(null);
   const [showSettings, setShowSettings] = useState(false);
@@ -52,26 +52,32 @@ const App: React.FC = () => {
     setIsParsing(true);
     try {
       const existingCats = Array.from(new Set(subscriptions.map(s => s.category))) as string[];
-      const parsed = await parseSubscriptionText(input, existingCats);
+      const items = await parseSubscriptionText(input, existingCats);
       
-      if (parsed && parsed.name) {
-        if (parsed.intent === 'DELETE' || parsed.intent === 'CANCEL') {
-          const target = subscriptions.find(s => s.name.toLowerCase().includes(parsed.name!.toLowerCase()));
+      if (items.length > 0) {
+        // 分离删除意图和创建意图
+        const toProcessImmediately = items.filter(it => it.intent === 'DELETE' || it.intent === 'CANCEL');
+        const toDraft = items.filter(it => it.intent !== 'DELETE' && it.intent !== 'CANCEL');
+
+        // 处理删除/取消
+        for (const it of toProcessImmediately) {
+          const target = subscriptions.find(s => s.name.toLowerCase().includes(it.name!.toLowerCase()));
           if (target && target.id) {
-            if (parsed.intent === 'DELETE') {
+            if (it.intent === 'DELETE') {
               await deleteSubscription(target.id);
-              showNotice(`已从记录中移除 ${target.name}`);
             } else {
               await saveSubscription({ ...target, status: 'canceled', autoRenew: false, updatedAt: Date.now() });
-              showNotice(`已停用 ${target.name} 的自动续费`);
             }
-            setInput('');
-            loadData();
-          } else {
-            showNotice("未能在清单中找到该服务", "error");
           }
-        } else {
-          setDraftSub(parsed);
+        }
+
+        if (toDraft.length > 0) {
+          setDraftSubs(toDraft);
+          setInput('');
+        } else if (toProcessImmediately.length > 0) {
+          showNotice(`已处理 ${toProcessImmediately.length} 条变更记录`);
+          setInput('');
+          loadData();
         }
       } else {
         showNotice("AI 暂时无法理解，请换种描述方式", "error");
@@ -83,31 +89,43 @@ const App: React.FC = () => {
     }
   };
 
-  const confirmDraft = async () => {
-    if (!draftSub || !draftSub.name) return;
+  const confirmAllDrafts = async () => {
+    if (draftSubs.length === 0) return;
     try {
-      const newSub: Subscription = {
-        uid: crypto.randomUUID(),
-        name: draftSub.name,
-        cost: draftSub.cost || 0,
-        currency: draftSub.currency || BASE_CURRENCY,
-        billingCycle: draftSub.billingCycle || BillingCycle.MONTHLY,
-        platform: draftSub.platform || PaymentPlatform.OTHER,
-        startDate: new Date().toISOString(),
-        autoRenew: draftSub.autoRenew ?? true,
-        category: draftSub.category || '其它',
-        status: 'active',
-        updatedAt: Date.now(),
-        logoUrl: draftSub.logoUrl
-      };
-      await saveSubscription(newSub);
-      setDraftSub(null);
-      setInput('');
+      for (const draft of draftSubs) {
+        if (!draft.name) continue;
+        const newSub: Subscription = {
+          uid: crypto.randomUUID(),
+          name: draft.name,
+          cost: draft.cost || 0,
+          currency: draft.currency || BASE_CURRENCY,
+          billingCycle: draft.billingCycle || BillingCycle.MONTHLY,
+          platform: draft.platform || PaymentPlatform.OTHER,
+          startDate: new Date().toISOString(),
+          autoRenew: draft.autoRenew ?? true,
+          category: draft.category || '其它',
+          status: 'active',
+          updatedAt: Date.now(),
+          logoUrl: draft.logoUrl
+        };
+        await saveSubscription(newSub);
+      }
+      setDraftSubs([]);
       loadData();
-      showNotice(`已成功记录 "${newSub.name}"`);
+      showNotice(`成功记录 ${draftSubs.length} 项订阅支出`);
     } catch (err) {
       showNotice("保存记录失败", "error");
     }
+  };
+
+  const updateDraft = (index: number, updates: Partial<ParsedResponse>) => {
+    const newDrafts = [...draftSubs];
+    newDrafts[index] = { ...newDrafts[index], ...updates };
+    setDraftSubs(newDrafts);
+  };
+
+  const removeDraft = (index: number) => {
+    setDraftSubs(prev => prev.filter((_, i) => i !== index));
   };
 
   const handleExport = () => {
@@ -225,7 +243,7 @@ const App: React.FC = () => {
                   type="text"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  placeholder="试试输入：订阅了 Netflix 4K 会员，每月 19.99 美元"
+                  placeholder="试试输入：订阅了 Netflix 每月 10 美金，ChatGPT 每月 20 美金..."
                   className="w-full bg-slate-50 border-2 border-slate-50 focus:border-indigo-400 focus:bg-white rounded-2xl md:rounded-[2rem] py-6 px-8 pr-32 md:pr-40 text-base md:text-lg font-medium outline-none transition-all placeholder:text-slate-300"
                 />
                 <button 
@@ -237,35 +255,86 @@ const App: React.FC = () => {
                 </button>
               </form>
 
-              <div className="space-y-4">
-                <div className="flex items-center gap-2">
-                   <div className="h-[1px] flex-1 bg-slate-100"></div>
-                   <span className="text-[9px] font-black text-slate-300 uppercase tracking-widest px-4">或者从预设中选择</span>
-                   <div className="h-[1px] flex-1 bg-slate-100"></div>
-                </div>
-                <QuickEntryGrid 
-                  onSelect={(product, plan) => {
-                    setDraftSub({
-                      intent: 'CREATE',
-                      name: product.name,
-                      cost: plan === 'custom' ? 0 : plan.cost,
-                      currency: plan === 'custom' ? BASE_CURRENCY : plan.currency,
-                      billingCycle: plan === 'custom' ? BillingCycle.MONTHLY : plan.cycle,
-                      category: product.category,
-                      logoUrl: `https://www.google.com/s2/favicons?sz=128&domain=${product.id}.com`
-                    });
-                  }} 
-                />
-              </div>
-
-              {draftSub && (
-                <div className="mt-8 border-t border-slate-50 pt-8 animate-in slide-in-from-top-4 duration-300">
-                  <DraftPreview 
-                    draft={draftSub} 
-                    onUpdate={(u) => setDraftSub({ ...draftSub, ...u })} 
-                    onConfirm={confirmDraft} 
-                    onCancel={() => setDraftSub(null)} 
+              {draftSubs.length === 0 && (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                     <div className="h-[1px] flex-1 bg-slate-100"></div>
+                     <span className="text-[9px] font-black text-slate-300 uppercase tracking-widest px-4">或者从预设中选择</span>
+                     <div className="h-[1px] flex-1 bg-slate-100"></div>
+                  </div>
+                  <QuickEntryGrid 
+                    onSelect={(product, plan) => {
+                      setDraftSubs([{
+                        intent: 'CREATE',
+                        name: product.name,
+                        cost: plan === 'custom' ? 0 : plan.cost,
+                        currency: plan === 'custom' ? BASE_CURRENCY : plan.currency,
+                        billingCycle: plan === 'custom' ? BillingCycle.MONTHLY : plan.cycle,
+                        category: product.category,
+                        logoUrl: `https://www.google.com/s2/favicons?sz=128&domain=${product.id}.com`
+                      }]);
+                    }} 
                   />
+                </div>
+              )}
+
+              {draftSubs.length > 0 && (
+                <div className="mt-8 space-y-6 animate-in slide-in-from-top-4 duration-300">
+                  <div className="flex items-center justify-between border-b border-slate-50 pb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="flex -space-x-3">
+                        {draftSubs.map((d, i) => (
+                          <div key={i} className="w-8 h-8 rounded-full bg-white border-2 border-slate-50 flex items-center justify-center text-[10px] font-black overflow-hidden shadow-sm">
+                            {d.logoUrl ? <img src={d.logoUrl} className="w-full h-full object-contain" /> : d.name?.charAt(0)}
+                          </div>
+                        ))}
+                      </div>
+                      <span className="text-sm font-black text-slate-900">识别到 {draftSubs.length} 项消费</span>
+                    </div>
+                    <div className="flex gap-4">
+                      <button onClick={() => setDraftSubs([])} className="text-xs font-black text-slate-400 hover:text-slate-600 uppercase tracking-widest">全部放弃</button>
+                      <button 
+                        onClick={confirmAllDrafts} 
+                        className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-indigo-100 transition-all active:scale-95"
+                      >
+                        全部确认并保存
+                      </button>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
+                    {draftSubs.map((draft, index) => (
+                      <div key={index} className="relative group">
+                        <DraftPreview 
+                          draft={draft} 
+                          onUpdate={(u) => updateDraft(index, u)} 
+                          onConfirm={() => {
+                            // 单个确认逻辑：直接保存并移除
+                            const newSub: Subscription = {
+                              uid: crypto.randomUUID(),
+                              name: draft.name!,
+                              cost: draft.cost || 0,
+                              currency: draft.currency || BASE_CURRENCY,
+                              billingCycle: draft.billingCycle || BillingCycle.MONTHLY,
+                              platform: draft.platform || PaymentPlatform.OTHER,
+                              startDate: new Date().toISOString(),
+                              autoRenew: draft.autoRenew ?? true,
+                              category: draft.category || '其它',
+                              status: 'active',
+                              updatedAt: Date.now(),
+                              logoUrl: draft.logoUrl
+                            };
+                            saveSubscription(newSub).then(() => {
+                              removeDraft(index);
+                              loadData();
+                              showNotice(`已保存 ${newSub.name}`);
+                            });
+                          }} 
+                          onCancel={() => removeDraft(index)} 
+                        />
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>

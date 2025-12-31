@@ -19,23 +19,24 @@ const getAIConfig = (): AIConfig => {
   return { provider: 'gemini', geminiModel: 'gemini-3-flash-preview' };
 };
 
-export const parseSubscriptionText = async (text: string, existingCategories: string[] = []): Promise<ParsedResponse | null> => {
+export const parseSubscriptionText = async (text: string, existingCategories: string[] = []): Promise<ParsedResponse[]> => {
   const config = getAIConfig();
   const categoriesContext = existingCategories.length > 0 
     ? `目前已有的分类有: ${existingCategories.join(', ')}。`
     : "";
 
-  const systemInstruction = `你是一个专业的个人财务助理。分析用户的输入并将其转化为结构化数据：
-      输入: "${text}"
+  const systemInstruction = `你是一个专业的个人财务助理。分析用户的输入并将其转化为一个或多个结构化数据对象。
+      用户输入: "${text}"
       
       规则:
       1. 意图检测: CREATE (新增), UPDATE (修改), DELETE (删除), CANCEL (退订)。
       2. 周期匹配: 识别关键词如“月”、“年”、“买断/永久”、“一次性”、“阶段”。
       3. 自动纠错: 比如用户说“Netflix 10块”，如果是美元区服务请默认识别为 USD。
       4. 互斥性: LIFETIME 和 ONE_TIME 的 autoRenew 必须为 false。
+      5. 批量处理: 用户可能在一句话里提到多个服务，请务必全部识别。
       ${categoriesContext}
 
-      请仅返回 JSON。`;
+      请返回一个包含对象的数组。`;
 
   try {
     let output = "";
@@ -50,17 +51,26 @@ export const parseSubscriptionText = async (text: string, existingCategories: st
           responseSchema: {
             type: Type.OBJECT,
             properties: {
-              intent: { type: Type.STRING, enum: ['CREATE', 'UPDATE', 'DELETE', 'CANCEL'] },
-              name: { type: Type.STRING },
-              cost: { type: Type.NUMBER },
-              currency: { type: Type.STRING },
-              billingCycle: { type: Type.STRING, enum: Object.values(BillingCycle) },
-              platform: { type: Type.STRING, enum: Object.values(PaymentPlatform) },
-              autoRenew: { type: Type.BOOLEAN },
-              category: { type: Type.STRING },
-              notes: { type: Type.STRING }
+              items: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    intent: { type: Type.STRING, enum: ['CREATE', 'UPDATE', 'DELETE', 'CANCEL'] },
+                    name: { type: Type.STRING },
+                    cost: { type: Type.NUMBER },
+                    currency: { type: Type.STRING },
+                    billingCycle: { type: Type.STRING, enum: Object.values(BillingCycle) },
+                    platform: { type: Type.STRING, enum: Object.values(PaymentPlatform) },
+                    autoRenew: { type: Type.BOOLEAN },
+                    category: { type: Type.STRING },
+                    notes: { type: Type.STRING }
+                  },
+                  required: ["intent", "name"]
+                }
+              }
             },
-            required: ["intent", "name"]
+            required: ["items"]
           }
         }
       });
@@ -76,7 +86,7 @@ export const parseSubscriptionText = async (text: string, existingCategories: st
         body: JSON.stringify({
           model: model,
           messages: [
-            { role: 'system', content: 'You are a helpful assistant that strictly outputs JSON.' },
+            { role: 'system', content: 'You are a helpful assistant that strictly outputs JSON. Your output must follow this format: {"items": [{"intent": "...", "name": "...", ...}]}' },
             { role: 'user', content: systemInstruction }
           ],
           response_format: { type: "json_object" },
@@ -89,18 +99,21 @@ export const parseSubscriptionText = async (text: string, existingCategories: st
       output = data.choices[0].message.content || "";
     }
 
-    if (!output) return null;
-    const parsed = JSON.parse(output.trim());
+    if (!output) return [];
+    const json = JSON.parse(output.trim());
+    const items = Array.isArray(json.items) ? json.items : [];
     
     // 自动补全品牌元数据
-    const brand = fetchBrandMetadata(parsed.name);
-    return {
-      ...parsed,
-      logoUrl: brand.logoUrl,
-      websiteUrl: brand.websiteUrl
-    } as ParsedResponse;
+    return items.map((item: any) => {
+      const brand = fetchBrandMetadata(item.name);
+      return {
+        ...item,
+        logoUrl: brand.logoUrl,
+        websiteUrl: brand.websiteUrl
+      };
+    });
   } catch (error) {
     console.error("SubTracker AI Error:", error);
-    return null;
+    return [];
   }
 };

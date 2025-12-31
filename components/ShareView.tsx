@@ -249,7 +249,8 @@ export const ShareView: React.FC<ShareViewProps> = ({ subscriptions }) => {
                   <div className="flex flex-col">
                     <div className="flex items-center gap-2">
                       <div className="w-6 h-6 bg-indigo-600 flex items-center justify-center text-white font-black text-[10px]">S</div>
-                      <p className="text-lg font-black text-slate-900 tracking-tighter leading-none">SubTracker <span className="text-indigo-600">AI</span></p>
+                      {/* 添加 whitespace-nowrap 防止 Logo 文字换行 */}
+                      <p className="text-lg font-black text-slate-900 tracking-tighter leading-none whitespace-nowrap">SubTracker <span className="text-indigo-600">AI</span></p>
                     </div>
                     <p className="text-[7px] font-bold text-slate-300 uppercase tracking-[0.2em] mt-3">Intelligent Personal Subscription Manager</p>
                   </div>
