@@ -304,7 +304,7 @@ const App: React.FC = () => {
         <div className="flex flex-col md:flex-row justify-between items-center gap-6 opacity-40 grayscale transition-all hover:opacity-100 hover:grayscale-0">
           <div className="flex items-center gap-2">
             <div className="w-5 h-5 bg-indigo-600 rounded flex items-center justify-center text-[8px] text-white font-black">S</div>
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">© 2025 SubTracker AI Dashboard</p>
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">© 2025 AiCC@jovi</p>
           </div>
           <div className="flex gap-8 text-[10px] font-black uppercase tracking-widest text-slate-400">
             <button onClick={handleExport} className="hover:text-indigo-600 transition-colors">导出 JSON</button>
