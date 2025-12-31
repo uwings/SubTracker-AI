@@ -2,9 +2,9 @@
 export enum BillingCycle {
   MONTHLY = 'MONTHLY',
   YEARLY = 'YEARLY',
-  ONE_TIME = 'ONE_TIME', // 单次付费（当月有效）
-  LIFETIME = 'LIFETIME', // 终身买断（一次付费，永远可用）
-  PHASED = 'PHASED'
+  ONE_TIME = 'ONE_TIME', // 单次付费
+  LIFETIME = 'LIFETIME', // 终身买断
+  PHASED = 'PHASED'      // 分阶段订阅
 }
 
 export type SubIntent = 'CREATE' | 'UPDATE' | 'DELETE' | 'CANCEL';
@@ -42,18 +42,34 @@ export interface Subscription {
 
 export interface DashboardBlock {
   id: string;
-  type: 'SUMMARY' | 'MONTH_CHART' | 'UPCOMING' | 'CATEGORY_PIE' | 'MONTH_BREAKDOWN' | 'NEXT_MONTH_PROJECTION' | 'PRODUCT_BAR' | 'QUICK_ENTRY';
+  type: 'SUMMARY' | 'MONTH_CHART' | 'UPCOMING' | 'CATEGORY_PIE' | 'MONTH_BREAKDOWN' | 'NEXT_MONTH_PROJECTION' | 'PRODUCT_BAR';
   title: string;
   size: 'small' | 'medium' | 'large';
+}
+
+export interface PresetPlan {
+  label: string;
+  cost: number;
+  currency: string;
+  cycle: BillingCycle;
+  description?: string;
+}
+
+export interface PresetProduct {
+  id: string;
+  name: string;
+  brandColor: string;
+  category: string;
+  plans: PresetPlan[];
 }
 
 export const BASE_CURRENCY = 'CNY';
 
 export const EXCHANGE_RATES: Record<string, number> = {
-  'USD': 7.24,
+  'USD': 7.25,
   'EUR': 7.85,
   'JPY': 0.048,
   'HKD': 0.93,
-  'GBP': 9.18,
+  'GBP': 9.20,
   'CNY': 1.0
 };

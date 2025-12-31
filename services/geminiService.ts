@@ -1,8 +1,7 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
 import { BillingCycle, Subscription, SubIntent, PaymentPlatform } from "../types";
-
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+import { fetchBrandMetadata } from "./brandService";
 
 export interface ParsedResponse extends Partial<Subscription> {
   intent: SubIntent;
@@ -10,25 +9,26 @@ export interface ParsedResponse extends Partial<Subscription> {
 
 export const parseSubscriptionText = async (text: string, existingCategories: string[] = []): Promise<ParsedResponse | null> => {
   try {
+    // 动态初始化以确保获取最新的 API KEY 环境
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    
     const categoriesContext = existingCategories.length > 0 
-      ? `目前已有的分类有: ${existingCategories.join(', ')}。请尽量从中选择最合适的分类，如果没有合适的再创建新分类。`
+      ? `目前已有的分类有: ${existingCategories.join(', ')}。`
       : "";
 
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: `你是一个智能订阅管理助手。请分析用户的输入: "${text}"。
+      contents: `你是一个专业的个人财务助理。分析用户的输入并将其转化为结构化数据：
+      输入: "${text}"
       
-      指令规则（必须严格遵守）:
-      1. 确定意图: 'DELETE' (删除), 'CANCEL' (取消续费), 'UPDATE' (更新), 或 'CREATE' (创建)。
-      2. 将名称标准化为官方品牌名。
-      3. 订阅类型与续费逻辑互斥规则:
-         - 如果用户提到“买断”、“终身”、“永久”，必须设为 'LIFETIME' 周期，且 'autoRenew' 必须为 false。
-         - 如果用户提到“买一个月”、“只用一次”，必须设为 'ONE_TIME' 周期，且 'autoRenew' 必须为 false。
-         - 只有 'MONTHLY' (按月) 或 'YEARLY' (按年) 周期可以设 'autoRenew' 为 true。
-      4. 检测平台: 'ALIPAY' (支付宝), 'WECHAT' (微信支付), 'APPLE' (苹果支付), 'GOOGLE', 'CREDIT_CARD' (信用卡), 'PAYPAL', 或 'OTHER'。
-      5. 分类指导: ${categoriesContext}
-      
-      请严格返回 JSON 格式。`,
+      规则:
+      1. 意图检测: CREATE (新增), UPDATE (修改), DELETE (删除), CANCEL (退订)。
+      2. 周期匹配: 识别关键词如“月”、“年”、“买断/永久”、“一次性”、“阶段”。
+      3. 自动纠错: 比如用户说“Netflix 10块”，如果是美元区服务请默认识别为 USD。
+      4. 互斥性: LIFETIME 和 ONE_TIME 的 autoRenew 必须为 false。
+      ${categoriesContext}
+
+      请返回 JSON。`,
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -41,9 +41,7 @@ export const parseSubscriptionText = async (text: string, existingCategories: st
             billingCycle: { type: Type.STRING, enum: Object.values(BillingCycle) },
             platform: { type: Type.STRING, enum: Object.values(PaymentPlatform) },
             autoRenew: { type: Type.BOOLEAN },
-            startDate: { type: Type.STRING },
             category: { type: Type.STRING },
-            websiteUrl: { type: Type.STRING },
             notes: { type: Type.STRING }
           },
           required: ["intent", "name"]
@@ -51,24 +49,20 @@ export const parseSubscriptionText = async (text: string, existingCategories: st
       }
     });
 
-    const textOutput = response.text;
-    if (!textOutput) return null;
+    const output = response.text;
+    if (!output) return null;
 
-    const parsed = JSON.parse(textOutput.trim());
+    const parsed = JSON.parse(output.trim());
     
-    // 如果是 LIFETIME 或 ONE_TIME，AI 如果识别错了强制纠正
-    if (parsed.billingCycle === BillingCycle.LIFETIME || parsed.billingCycle === BillingCycle.ONE_TIME) {
-      parsed.autoRenew = false;
-    }
-
-    if (parsed.websiteUrl) {
-      const domain = parsed.websiteUrl.replace(/https?:\/\//, '').split('/')[0];
-      parsed.logoUrl = `https://www.google.com/s2/favicons?sz=128&domain=${domain}`;
-    }
-
-    return parsed as ParsedResponse;
+    // 自动补全品牌元数据
+    const brand = fetchBrandMetadata(parsed.name);
+    return {
+      ...parsed,
+      logoUrl: brand.logoUrl,
+      websiteUrl: brand.websiteUrl
+    } as ParsedResponse;
   } catch (error) {
-    console.error("AI Parsing Error:", error);
+    console.error("SubTracker AI: Gemini Parsing Error:", error);
     return null;
   }
 };
