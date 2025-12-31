@@ -55,7 +55,6 @@
 }
 </script>
     <script>
-        // 监控全局加载错误
         window.addEventListener('error', function(e) {
             const root = document.getElementById('root');
             if (root && root.innerHTML === '') {
@@ -63,10 +62,9 @@
                     <div style="padding: 40px; text-align: center; font-family: sans-serif; height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; background: white;">
                         <div style="background: #fdf2f2; border: 1px solid #fee2e2; padding: 32px; border-radius: 32px; max-width: 450px; box-shadow: 0 10px 15px rgba(0,0,0,0.05);">
                             <h2 style="color: #991b1b; margin-bottom: 12px; font-weight: 800;">启动受阻</h2>
-                            <p style="color: #b91c1c; font-size: 14px; line-height: 1.6;">模块加载失败。这通常是由于浏览器缓存了不兼容的库版本或网络连接问题。</p>
+                            <p style="color: #b91c1c; font-size: 14px; line-height: 1.6;">模块加载失败。这通常是由于网络连接问题，请尝试刷新页面。</p>
                             <div style="margin-top: 24px; display: flex; gap: 12px; justify-content: center;">
                                 <button onclick="location.reload(true)" style="padding: 12px 24px; background: #6366f1; color: white; border: none; border-radius: 12px; font-weight: 700; cursor: pointer;">强制刷新</button>
-                                <button onclick="localStorage.clear(); location.reload(true);" style="padding: 12px 24px; background: white; color: #64748b; border: 1px solid #e2e8f0; border-radius: 12px; font-weight: 700; cursor: pointer;">清除缓存</button>
                             </div>
                         </div>
                     </div>

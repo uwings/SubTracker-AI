@@ -1,7 +1,7 @@
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Subscription, DashboardBlock, BillingCycle, BASE_CURRENCY, PaymentPlatform } from './types';
-import { getAllSubscriptions, saveSubscription, deleteSubscription } from './db';
+import { getAllSubscriptions, saveSubscription, deleteSubscription, importSubscriptions } from './db';
 import { parseSubscriptionText, ParsedResponse } from './services/geminiService';
 import { BlockContainer } from './components/BlockContainer';
 import { SubscriptionList } from './components/SubscriptionList';
@@ -9,6 +9,7 @@ import { DraftPreview } from './components/DraftPreview';
 import { QuickEntryGrid } from './components/QuickEntryGrid';
 import { ShareView } from './components/ShareView';
 import { TimelineView } from './components/TimelineView';
+import { SettingsModal } from './components/SettingsModal';
 
 const App: React.FC = () => {
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
@@ -17,6 +18,8 @@ const App: React.FC = () => {
   const [draftSub, setDraftSub] = useState<ParsedResponse | null>(null);
   const [view, setView] = useState<'dashboard' | 'list' | 'share'>('dashboard');
   const [notification, setNotification] = useState<{message: string, type: 'success' | 'error'} | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadData = useCallback(async () => {
     try {
@@ -38,13 +41,16 @@ const App: React.FC = () => {
     }
   }, [notification]);
 
+  const showNotice = (message: string, type: 'success' | 'error' = 'success') => {
+    setNotification({ message, type });
+  };
+
   const handleAISubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isParsing) return;
 
     setIsParsing(true);
     try {
-      // Fix: Explicitly cast the unique categories array to string[] to prevent TypeScript from inferring 'unknown[]'.
       const existingCats = Array.from(new Set(subscriptions.map(s => s.category))) as string[];
       const parsed = await parseSubscriptionText(input, existingCats);
       
@@ -54,24 +60,24 @@ const App: React.FC = () => {
           if (target && target.id) {
             if (parsed.intent === 'DELETE') {
               await deleteSubscription(target.id);
-              setNotification({ message: `已从记录中移除 ${target.name}`, type: 'success' });
+              showNotice(`已从记录中移除 ${target.name}`);
             } else {
               await saveSubscription({ ...target, status: 'canceled', autoRenew: false, updatedAt: Date.now() });
-              setNotification({ message: `已停用 ${target.name} 的自动续费`, type: 'success' });
+              showNotice(`已停用 ${target.name} 的自动续费`);
             }
             setInput('');
             loadData();
           } else {
-            setNotification({ message: "未能在清单中找到该服务", type: 'error' });
+            showNotice("未能在清单中找到该服务", "error");
           }
         } else {
           setDraftSub(parsed);
         }
       } else {
-        setNotification({ message: "AI 暂时无法理解，请换种描述方式", type: 'error' });
+        showNotice("AI 暂时无法理解，请换种描述方式", "error");
       }
     } catch (err) {
-      setNotification({ message: "智能服务连接失败", type: 'error' });
+      showNotice("智能服务连接失败", "error");
     } finally {
       setIsParsing(false);
     }
@@ -98,10 +104,49 @@ const App: React.FC = () => {
       setDraftSub(null);
       setInput('');
       loadData();
-      setNotification({ message: `已成功记录 "${newSub.name}"`, type: 'success' });
+      showNotice(`已成功记录 "${newSub.name}"`);
     } catch (err) {
-      setNotification({ message: "保存记录失败", type: 'error' });
+      showNotice("保存记录失败", "error");
     }
+  };
+
+  const handleExport = () => {
+    if (subscriptions.length === 0) {
+      showNotice("暂无数据可导出", "error");
+      return;
+    }
+    const dataStr = JSON.stringify(subscriptions, null, 2);
+    const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+    const exportFileDefaultName = `subtracker-export-${new Date().toISOString().split('T')[0]}.json`;
+
+    const linkElement = document.createElement('a');
+    linkElement.setAttribute('href', dataUri);
+    linkElement.setAttribute('download', exportFileDefaultName);
+    linkElement.click();
+    showNotice("数据已准备好下载");
+  };
+
+  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const json = JSON.parse(event.target?.result as string);
+        if (Array.isArray(json)) {
+          await importSubscriptions(json);
+          await loadData();
+          showNotice(`成功导入 ${json.length} 条记录`);
+        } else {
+          showNotice("无效的文件格式", "error");
+        }
+      } catch (err) {
+        showNotice("导入失败，请检查文件内容", "error");
+      }
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    };
+    reader.readAsText(file);
   };
 
   const blocks: DashboardBlock[] = [
@@ -122,6 +167,8 @@ const App: React.FC = () => {
         </div>
       )}
 
+      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
+
       <header className="bg-white/80 backdrop-blur-xl border-b border-slate-200 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
           <div className="flex items-center gap-3 group cursor-pointer" onClick={() => setView('dashboard')}>
@@ -131,16 +178,38 @@ const App: React.FC = () => {
             <span className="text-xl font-black tracking-tighter">SubTracker <span className="text-indigo-600">AI</span></span>
           </div>
 
-          <div className="flex bg-slate-100 p-1 rounded-xl">
-            {(['dashboard', 'list', 'share'] as const).map(v => (
-              <button 
-                key={v} 
-                onClick={() => setView(v)}
-                className={`px-5 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${view === v ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-              >
-                {v === 'dashboard' ? '看板' : v === 'list' ? '列表' : '分享'}
-              </button>
-            ))}
+          <div className="flex items-center gap-6">
+             <div className="hidden md:flex items-center gap-4">
+                <button onClick={handleExport} className="flex items-center gap-1.5 text-slate-400 hover:text-indigo-600 transition-colors py-2" title="导出数据">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                  <span className="text-[10px] font-black uppercase tracking-widest">导出数据</span>
+                </button>
+                <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-1.5 text-slate-400 hover:text-indigo-600 transition-colors py-2" title="导入数据">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                  <span className="text-[10px] font-black uppercase tracking-widest">导入数据</span>
+                </button>
+                <input type="file" ref={fileInputRef} onChange={handleImport} className="hidden" accept=".json" />
+             </div>
+             <div className="flex items-center gap-3">
+               <div className="flex bg-slate-100 p-1 rounded-xl">
+                 {(['dashboard', 'list', 'share'] as const).map(v => (
+                   <button 
+                     key={v} 
+                     onClick={() => setView(v)}
+                     className={`px-5 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${view === v ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                   >
+                     {v === 'dashboard' ? '看板' : v === 'list' ? '列表' : '分享'}
+                   </button>
+                 ))}
+               </div>
+               <button 
+                 onClick={() => setShowSettings(true)}
+                 className="p-2.5 bg-slate-100 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all"
+                 title="AI 设置"
+               >
+                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+               </button>
+             </div>
           </div>
         </div>
       </header>
@@ -206,7 +275,7 @@ const App: React.FC = () => {
         {view === 'dashboard' && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
             {blocks.map(block => (
-              <div key={block.id} className={block.size === 'large' ? 'lg:col-span-2' : ''}>
+              <div key={block.id} className={block.type === 'MONTH_CHART' ? 'lg:col-span-3' : (block.size === 'large' ? 'lg:col-span-2' : '')}>
                 <BlockContainer block={block} subscriptions={subscriptions} />
               </div>
             ))}
@@ -233,10 +302,14 @@ const App: React.FC = () => {
 
       <footer className="max-w-7xl mx-auto px-6 py-12 border-t border-slate-200 mt-12">
         <div className="flex flex-col md:flex-row justify-between items-center gap-6 opacity-40 grayscale transition-all hover:opacity-100 hover:grayscale-0">
-          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">© 2025 SubTracker AI Dashboard</p>
+          <div className="flex items-center gap-2">
+            <div className="w-5 h-5 bg-indigo-600 rounded flex items-center justify-center text-[8px] text-white font-black">S</div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">© 2025 SubTracker AI Dashboard</p>
+          </div>
           <div className="flex gap-8 text-[10px] font-black uppercase tracking-widest text-slate-400">
-            <span>Powered by Gemini 3</span>
-            <span>Local IndexedDB Storage</span>
+            <button onClick={handleExport} className="hover:text-indigo-600 transition-colors">导出 JSON</button>
+            <button onClick={() => fileInputRef.current?.click()} className="hover:text-indigo-600 transition-colors">导入 JSON</button>
+            <button onClick={() => setShowSettings(true)} className="hover:text-indigo-600 transition-colors">模型引擎</button>
           </div>
         </div>
       </footer>

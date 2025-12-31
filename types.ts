@@ -2,9 +2,9 @@
 export enum BillingCycle {
   MONTHLY = 'MONTHLY',
   YEARLY = 'YEARLY',
-  ONE_TIME = 'ONE_TIME', // 单次付费
-  LIFETIME = 'LIFETIME', // 终身买断
-  PHASED = 'PHASED'      // 分阶段订阅
+  ONE_TIME = 'ONE_TIME', 
+  LIFETIME = 'LIFETIME', 
+  PHASED = 'PHASED'      
 }
 
 export type SubIntent = 'CREATE' | 'UPDATE' | 'DELETE' | 'CANCEL';
@@ -61,6 +61,16 @@ export interface PresetProduct {
   brandColor: string;
   category: string;
   plans: PresetPlan[];
+}
+
+export interface AIConfig {
+  provider: 'gemini' | 'custom';
+  geminiModel: 'gemini-3-flash-preview' | 'gemini-3-pro-preview';
+  customConfig?: {
+    apiKey: string;
+    baseUrl: string;
+    model: string;
+  };
 }
 
 export const BASE_CURRENCY = 'CNY';
