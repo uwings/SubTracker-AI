@@ -59,7 +59,7 @@ const App: React.FC = () => {
         const toProcessImmediately = items.filter(it => it.intent === 'DELETE' || it.intent === 'CANCEL');
         const toDraft = items.filter(it => it.intent !== 'DELETE' && it.intent !== 'CANCEL');
 
-        // 处理删除/取消
+        // 立即处理删除/取消
         for (const it of toProcessImmediately) {
           const target = subscriptions.find(s => s.name.toLowerCase().includes(it.name!.toLowerCase()));
           if (target && target.id) {
@@ -75,7 +75,7 @@ const App: React.FC = () => {
           setDraftSubs(toDraft);
           setInput('');
         } else if (toProcessImmediately.length > 0) {
-          showNotice(`已处理 ${toProcessImmediately.length} 条变更记录`);
+          showNotice(`已执行 ${toProcessImmediately.length} 项变更操作`);
           setInput('');
           loadData();
         }
@@ -112,9 +112,9 @@ const App: React.FC = () => {
       }
       setDraftSubs([]);
       loadData();
-      showNotice(`成功记录 ${draftSubs.length} 项订阅支出`);
+      showNotice(`成功批量记录 ${draftSubs.length} 项订阅`);
     } catch (err) {
-      showNotice("保存记录失败", "error");
+      showNotice("保存失败", "error");
     }
   };
 
@@ -237,13 +237,13 @@ const App: React.FC = () => {
           <section className="bg-white p-8 md:p-10 rounded-[2.5rem] shadow-xl shadow-slate-200/40 border border-slate-100 relative overflow-hidden">
             <div className="absolute top-0 right-0 w-80 h-80 bg-indigo-50 rounded-full -mr-40 -mt-40 blur-[80px] opacity-40"></div>
             <div className="relative z-10">
-              <h2 className="text-[10px] font-black mb-6 text-slate-300 uppercase tracking-[0.3em]">AI-Powered Record</h2>
+              <h2 className="text-[10px] font-black mb-6 text-slate-300 uppercase tracking-[0.3em]">AI-Powered Batch Record</h2>
               <form onSubmit={handleAISubmit} className="relative mb-8">
                 <input 
                   type="text"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  placeholder="试试输入：订阅了 Netflix 每月 10 美金，ChatGPT 每月 20 美金..."
+                  placeholder="试试输入：ChatGPT 每月 20 美金，DeepSeek 充值 100 元..."
                   className="w-full bg-slate-50 border-2 border-slate-50 focus:border-indigo-400 focus:bg-white rounded-2xl md:rounded-[2rem] py-6 px-8 pr-32 md:pr-40 text-base md:text-lg font-medium outline-none transition-all placeholder:text-slate-300"
                 />
                 <button 
@@ -251,7 +251,7 @@ const App: React.FC = () => {
                   disabled={isParsing || !input.trim()}
                   className="absolute right-3 top-3 bottom-3 px-6 md:px-10 bg-slate-900 hover:bg-black text-white rounded-xl md:rounded-[1.5rem] font-black text-[10px] uppercase tracking-widest transition-all disabled:bg-slate-200 disabled:cursor-not-allowed"
                 >
-                  {isParsing ? '解析中' : '快速记账'}
+                  {isParsing ? '解析中' : '批量记账'}
                 </button>
               </form>
 
@@ -280,22 +280,27 @@ const App: React.FC = () => {
 
               {draftSubs.length > 0 && (
                 <div className="mt-8 space-y-6 animate-in slide-in-from-top-4 duration-300">
-                  <div className="flex items-center justify-between border-b border-slate-50 pb-4">
-                    <div className="flex items-center gap-3">
+                  <div className="flex items-center justify-between border-b border-slate-50 pb-4 px-2">
+                    <div className="flex items-center gap-4">
                       <div className="flex -space-x-3">
-                        {draftSubs.map((d, i) => (
-                          <div key={i} className="w-8 h-8 rounded-full bg-white border-2 border-slate-50 flex items-center justify-center text-[10px] font-black overflow-hidden shadow-sm">
-                            {d.logoUrl ? <img src={d.logoUrl} className="w-full h-full object-contain" /> : d.name?.charAt(0)}
+                        {draftSubs.slice(0, 5).map((d, i) => (
+                          <div key={i} className="w-9 h-9 rounded-xl bg-white border-2 border-slate-50 flex items-center justify-center text-[10px] font-black overflow-hidden shadow-sm">
+                            {d.logoUrl ? <img src={d.logoUrl} className="w-full h-full object-contain p-1" /> : d.name?.charAt(0)}
                           </div>
                         ))}
+                        {draftSubs.length > 5 && (
+                          <div className="w-9 h-9 rounded-xl bg-slate-900 text-white flex items-center justify-center text-[10px] font-black border-2 border-slate-50 shadow-sm">
+                            +{draftSubs.length - 5}
+                          </div>
+                        )}
                       </div>
-                      <span className="text-sm font-black text-slate-900">识别到 {draftSubs.length} 项消费</span>
+                      <span className="text-sm font-black text-slate-900">识别到 {draftSubs.length} 项消费记录</span>
                     </div>
                     <div className="flex gap-4">
-                      <button onClick={() => setDraftSubs([])} className="text-xs font-black text-slate-400 hover:text-slate-600 uppercase tracking-widest">全部放弃</button>
+                      <button onClick={() => setDraftSubs([])} className="text-[10px] font-black text-slate-400 hover:text-red-500 uppercase tracking-widest transition-colors">全部清空</button>
                       <button 
                         onClick={confirmAllDrafts} 
-                        className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-indigo-100 transition-all active:scale-95"
+                        className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-xl shadow-indigo-100 transition-all active:scale-95"
                       >
                         全部确认并保存
                       </button>
@@ -304,12 +309,11 @@ const App: React.FC = () => {
                   
                   <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
                     {draftSubs.map((draft, index) => (
-                      <div key={index} className="relative group">
+                      <div key={index}>
                         <DraftPreview 
                           draft={draft} 
                           onUpdate={(u) => updateDraft(index, u)} 
                           onConfirm={() => {
-                            // 单个确认逻辑：直接保存并移除
                             const newSub: Subscription = {
                               uid: crypto.randomUUID(),
                               name: draft.name!,
@@ -373,7 +377,7 @@ const App: React.FC = () => {
         <div className="flex flex-col md:flex-row justify-between items-center gap-6 opacity-40 grayscale transition-all hover:opacity-100 hover:grayscale-0">
           <div className="flex items-center gap-2">
             <div className="w-5 h-5 bg-indigo-600 rounded flex items-center justify-center text-[8px] text-white font-black">S</div>
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">© 2025 AiCC@jovi</p>
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 whitespace-nowrap">© 2025 AiCC@jovi</p>
           </div>
           <div className="flex gap-8 text-[10px] font-black uppercase tracking-widest text-slate-400">
             <button onClick={handleExport} className="hover:text-indigo-600 transition-colors">导出 JSON</button>

@@ -33,7 +33,7 @@ export const parseSubscriptionText = async (text: string, existingCategories: st
       2. 周期匹配: 识别关键词如“月”、“年”、“买断/永久”、“一次性”、“阶段”。
       3. 自动纠错: 比如用户说“Netflix 10块”，如果是美元区服务请默认识别为 USD。
       4. 互斥性: LIFETIME 和 ONE_TIME 的 autoRenew 必须为 false。
-      5. 批量处理: 用户可能在一句话里提到多个服务，请务必全部识别。
+      5. 批量处理: 用户可能在一句话里提到多个服务，请务必全部识别。如果是充值、购买单次额度，请设为 ONE_TIME。
       ${categoriesContext}
 
       请返回一个包含对象的数组。`;

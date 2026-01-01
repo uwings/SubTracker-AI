@@ -53,15 +53,13 @@ export const ShareView: React.FC<ShareViewProps> = ({ subscriptions }) => {
     return [...subscriptions].sort((a, b) => b.cost - a.cost).slice(0, 10);
   }, [subscriptions]);
 
-  // 预加载 Logo 并转换为 Base64 缓存
+  // 预加载 Logo 并转换为 Base64 缓存，彻底解决导出图片的 CORS 问题
   useEffect(() => {
     const loadLogos = async () => {
       const cache: Record<string, string> = {};
       const promises = displaySubs.map(async (sub) => {
         if (sub.logoUrl) {
           try {
-            // 注意：如果图片服务器不支持 CORS，此步骤可能失败
-            // 但 google favicons 协议通常支持
             const base64 = await toDataURL(sub.logoUrl);
             cache[sub.uid] = base64;
           } catch (e) {
@@ -170,13 +168,11 @@ export const ShareView: React.FC<ShareViewProps> = ({ subscriptions }) => {
 
         <div className="lg:col-span-8 flex justify-center">
           <div className="sticky top-28 w-full max-w-[420px]">
-            {/* 方角海报主体 */}
             <div 
               ref={posterRef}
               className="bg-white shadow-2xl overflow-hidden w-full border border-slate-100 flex flex-col relative rounded-none"
               style={{ minHeight: '720px' }}
             >
-              {/* Header 区域 */}
               <div 
                 className="p-12 text-white relative flex flex-col justify-end overflow-hidden"
                 style={{ 
@@ -209,7 +205,6 @@ export const ShareView: React.FC<ShareViewProps> = ({ subscriptions }) => {
                     <div key={idx} className="flex items-center justify-between group py-1">
                       <div className="flex items-center gap-4">
                         <div className="w-10 h-10 rounded-none bg-slate-50 flex items-center justify-center border border-slate-100 overflow-hidden flex-shrink-0">
-                           {/* 优先使用 Base64 缓存的图片，彻底解决海报导出时的跨域问题 */}
                            {logoCache[sub.uid] || sub.logoUrl ? (
                              <img 
                                src={logoCache[sub.uid] || sub.logoUrl} 
@@ -224,7 +219,7 @@ export const ShareView: React.FC<ShareViewProps> = ({ subscriptions }) => {
                                }}
                              />
                            ) : (
-                             <span className="text-indigo-600 font-black text-sm">{sub.name.charAt(0)}</span>
+                             <span className="text-indigo-600 font-black text-sm">${sub.name.charAt(0)}</span>
                            )}
                         </div>
                         <div className="min-w-0">
@@ -249,7 +244,6 @@ export const ShareView: React.FC<ShareViewProps> = ({ subscriptions }) => {
                   <div className="flex flex-col">
                     <div className="flex items-center gap-2">
                       <div className="w-6 h-6 bg-indigo-600 flex items-center justify-center text-white font-black text-[10px]">S</div>
-                      {/* 添加 whitespace-nowrap 防止 Logo 文字换行 */}
                       <p className="text-lg font-black text-slate-900 tracking-tighter leading-none whitespace-nowrap">SubTracker <span className="text-indigo-600">AI</span></p>
                     </div>
                     <p className="text-[7px] font-bold text-slate-300 uppercase tracking-[0.2em] mt-3">Intelligent Personal Subscription Manager</p>
